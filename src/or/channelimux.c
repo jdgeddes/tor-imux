@@ -986,6 +986,11 @@ channel_imux_get_write_connection(channel_imux_t *imuxchan, channel_imux_circuit
     return imuxchan->bulk_connection;
   }
 
+  if(get_options()->IMUXSeparateWebConnection && imuxcirc && imuxcirc->circ && 
+      imuxcirc->circ->traffic_type == TRAFFIC_TYPE_WEB && imuxchan->web_connection) {
+    return imuxchan->web_connection;
+  }
+
   switch(imuxchan->schedule_type)
   {
     case CHANNEL_IMUX_SCHEDULE_RR_CIRC:
@@ -1327,16 +1332,15 @@ channel_imux_find_imux_connection(channel_t *chan, or_connection_t *conn)
 }
 
 void
-channel_imux_send_bulk_cell(channel_imux_t *imuxchan, channel_imux_connection_t *imuxconn)
+channel_imux_send_command_cell(channel_imux_t *imuxchan, channel_imux_connection_t *imuxconn, int command)
 {
   tor_assert(imuxchan);
   tor_assert(imuxconn);
   tor_assert(TO_CONN(imuxconn->conn)->state == OR_CONN_STATE_OPEN);
 
-  /* write CELL_BULK_CONNECTION to buffer */
   cell_t cell;
   memset(&cell,0,sizeof(cell_t));
-  cell.command = CELL_BULK_CONN;
+  cell.command = command;
   connection_or_write_cell_to_buf(&cell, imuxconn->conn);
 }
 
@@ -1369,10 +1373,14 @@ channel_imux_handle_state_change_on_orconn(channel_t *chan, or_connection_t *con
 
   if(state == OR_CONN_STATE_OPEN) {
     /* if we don't have a bulk conneciton but at least one open connection, set bulk */
-    if(get_options()->IMUXSeparateBulkConnection && !imuxchan->bulk_connection && smartlist_len(imuxchan->open_connections) > 0) {
+    if(get_options()->IMUXSeparateBulkConnection && !imuxchan->bulk_connection) {
       imuxchan->bulk_connection = imuxconn;
-      channel_imux_send_bulk_cell(imuxchan, imuxconn);
+      channel_imux_send_command_cell(imuxchan, imuxconn, CELL_BULK_CONN);
       log_info(LD_CHANNEL, "channel %p assigning connection %p as bulk connection", imuxchan, imuxconn);
+    } else if(get_options()->IMUXSeparateWebConnection && !imuxchan->web_connection) {
+      imuxchan->web_connection = imuxconn;
+      channel_imux_send_command_cell(imuxchan, imuxconn, CELL_WEB_CONN);
+      log_info(LD_CHANNEL, "channel %p assigning connection %p as web connection", imuxchan, imuxconn);
     }
 
     int found = 0;
@@ -1468,6 +1476,13 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
   if(cell->command == CELL_BULK_CONN) {
     imuxchan->bulk_connection = imuxconn;
     log_info(LD_CHANNEL, "channel %p: received new bulk connection cell on conn %p", imuxchan, imuxconn);
+    return;
+  }
+
+  // check if new web connection
+  if(cell->command == CELL_WEB_CONN) {
+    imuxchan->web_connection = imuxconn;
+    log_info(LD_CHANNEL, "channel %p: received new web connection cell on conn %p", imuxchan, imuxconn);
     return;
   }
 
@@ -1704,9 +1719,14 @@ channel_imux_remove_connection(channel_t *chan, or_connection_t *conn)
   /* if we are closing the bulk connection, pick another one and send the CELL_BULK_CONN cell */
   if(imuxconn == imuxchan->bulk_connection) {
     imuxchan->bulk_connection = channel_imux_get_next_open_connection(imuxchan);
-    channel_imux_send_bulk_cell(imuxchan, imuxchan->bulk_connection);
+    channel_imux_send_command_cell(imuxchan, imuxchan->bulk_connection, CELL_BULK_CONN);
     
     log_info(LD_CHANNEL, "channel %p: new bulk connection %p", imuxchan, imuxchan->bulk_connection);
+  } else  if(imuxconn == imuxchan->web_connection) {
+    imuxchan->web_connection = channel_imux_get_next_open_connection(imuxchan);
+    channel_imux_send_command_cell(imuxchan, imuxchan->web_connection, CELL_WEB_CONN);
+    
+    log_info(LD_CHANNEL, "channel %p: new web connection %p", imuxchan, imuxchan->web_connection);
   }
 
   /* remove connection from lsits */

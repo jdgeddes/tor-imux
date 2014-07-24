@@ -481,15 +481,14 @@ static config_var_t option_vars_[] = {
   V(DualThresholdLight, DOUBLE, "1.4"),
   V(DualThresholdHeavy, DOUBLE, "0.3"),
   V(DualThresholdInactive,  DOUBLE, "0.0"),
-  V(DualUseTrafficTracker, INT, "0"),
+  V(DualUseTrafficTracker, INT, "1"),
 
   V(IMUXScheduleType, INT, "1"),                // CIRC_RR=1  CELL_RR=2, BEST=3, EWMA=4
-  V(IMUXInitConnections, INT, "16"),
+  V(IMUXInitConnections, INT, "1"),
   V(IMUXMaxConnections, INT, "-1"),
-  V(IMUXCircuitConnectionRatio, DOUBLE, "1.0"),
-  V(IMUXPrioritizeThreshold, INT, "20"),
   V(IMUXSeparateBulkConnection, BOOL, "0"),
-  V(IMUXConnLimitThreshold, DOUBLE, "0.95"),
+  V(IMUXSeparateWebConnection, BOOL, "0"),
+  V(IMUXConnLimitThreshold, DOUBLE, "0.9"),
 
   { NULL, CONFIG_TYPE_OBSOLETE, 0, NULL }
 };

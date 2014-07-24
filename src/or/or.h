@@ -873,8 +873,12 @@ typedef enum {
 #define CELL_CREATED2 11
 
 #define CELL_BULK_CONN 64
+#define CELL_WEB_CONN 65
 #define CELL_CLOSING_CONN 66
 #define CELL_CLOSING_CHAN 67
+
+#define CELL_LIGHT_CONN 70
+#define CELL_HEAVY_CONN 71
 
 #define CELL_TRACK 100
 
@@ -4277,9 +4281,8 @@ typedef struct {
   int IMUXScheduleType;
   int IMUXInitConnections;
   int IMUXMaxConnections;
-  double IMUXCircuitConnectionRatio;
-  int IMUXPrioritizeThreshold;
   int IMUXSeparateBulkConnection;
+  int IMUXSeparateWebConnection;
   double IMUXConnLimitThreshold;
 } or_options_t;
 

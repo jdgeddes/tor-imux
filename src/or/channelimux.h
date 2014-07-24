@@ -81,6 +81,7 @@ struct channel_imux_s {
   int num_open_connections;
   or_connection_t *controlconn;
   channel_imux_connection_t *bulk_connection;
+  channel_imux_connection_t *web_connection;
 
   int next_conn_index;
 
