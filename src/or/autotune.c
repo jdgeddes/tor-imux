@@ -459,6 +459,12 @@ static void global_autotune_schedule_orconns(smartlist_t* eligible_orconns) {
     if (!chosen_orconn)
       break;
 
+    /* check to make sure the orconn hasn't been freed */
+    if(chosen_orconn->base_.magic != OR_CONNECTION_MAGIC || TO_CONN(chosen_orconn)->type > CONN_TYPE_MAX_) {
+      smartlist_remove(eligible_orconns, chosen_orconn);
+      continue;
+    }
+
     chosen_chan = chosen_orconn->chan;
 
     /* move some cells from that circuit to our tor socket buffer */

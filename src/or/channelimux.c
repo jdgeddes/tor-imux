@@ -39,6 +39,8 @@
 #define LOG_ONEHALF -0.69314718055994529
 #define EWMA_ACTIVE_THRESHOLD 50.0
 
+#define IMUX_LOG_LEVEL LOG_INFO
+
 #define IMUXCIRC_TRAFFIC_TYPE(imuxcirc) (!(imuxcirc->circ) ? (TRAFFIC_TYPE_UNKNOWN) : (imuxcirc->circ->traffic_type))
 
 /**************************************
@@ -163,7 +165,7 @@ channel_imux_connect(const tor_addr_t *addr, uint16_t port,
   if (is_local_addr(addr)) channel_mark_local(chan);
   channel_mark_outgoing(chan);
 
-  log_info(LD_CHANNEL, "channel %p: created channel to %s", imuxchan, fmt_addrport(addr, port));
+  log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: created channel to %s", imuxchan, fmt_addrport(addr, port));
 
   imuxchan->addr = *addr;   
   /*imuxchan->port = port;*/
@@ -192,7 +194,7 @@ channel_imux_connect(const tor_addr_t *addr, uint16_t port,
       goto err;
     }
 
-    log_info(LD_CHANNEL, "channel %p: created connection %d with sock %d on channel id " U64_FORMAT " (imuxconn %p orconn %p)", imuxchan,
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: created connection %d with sock %d on channel id " U64_FORMAT " (imuxconn %p orconn %p)", imuxchan,
         i + 1, TO_CONN(imuxconn->conn)->s, U64_PRINTF_ARG(chan->global_identifier), imuxconn, imuxconn->conn);
   }
 
@@ -283,7 +285,7 @@ channel_imux_create_incoming(tor_addr_t addr, uint16_t port, char *id_digest)
 
   channel_imux_common_init(imuxchan);
 
-  log_info(LD_CHANNEL, "channel %p: creating incoming channel from %s", imuxchan, fmt_addrport(&addr, port));
+  log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: creating incoming channel from %s", imuxchan, fmt_addrport(&addr, port));
 
   imuxchan->addr = addr;
   /*imuxchan->port = port;*/
@@ -343,7 +345,7 @@ channel_imux_handle_incoming(or_connection_t *orconn)
   /* if we have too many connections open, the other relay is opening too many and pick one to close,
    * notifying the relay that we have enough open connections */
   if(channel_n_conns >= channel_max_conns && smartlist_len(imuxchan->connections) > get_options()->IMUXInitConnections) {
-    log_info(LD_CHANNEL, "channel %p: (incoming) we have %d connections with maxconns %d (%d open), closing conn %p with socket %d", imuxchan,
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: (incoming) we have %d connections with maxconns %d (%d open), closing conn %p with socket %d", imuxchan,
         channel_n_conns, channel_max_conns, smartlist_len(imuxchan->open_connections), orconn, TO_CONN(orconn)->s);
 
     /* try and find a non-open conneciton to close first */
@@ -352,7 +354,7 @@ channel_imux_handle_incoming(or_connection_t *orconn)
       imuxconn = channel_imux_get_connection_to_close(imuxchan, 1);
 
     if(imuxconn) {
-      log_info(LD_CHANNEL, "channel %p: (incoming) closing connection %p with socket %d and state %d", imuxchan, imuxconn, 
+      log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: (incoming) closing connection %p with socket %d and state %d", imuxchan, imuxconn, 
           TO_CONN(imuxconn->conn)->s, TO_CONN(imuxconn->conn)->state);
 
       channel_imux_close_connection(imuxchan, imuxconn);
@@ -365,7 +367,7 @@ channel_imux_handle_incoming(or_connection_t *orconn)
   imuxconn->create_time = time(NULL);
   smartlist_add(imuxchan->connections, imuxconn);
 
-  log_info(LD_CHANNEL, "channel %p: accepting incoming conneciton %p orconn %p (socket %d) from %s (incoming %s)", imuxchan, imuxconn, orconn,
+  log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: accepting incoming conneciton %p orconn %p (socket %d) from %s (incoming %s)", imuxchan, imuxconn, orconn,
       TO_CONN(orconn)->s, fmt_addrport(&(TO_CONN(orconn)->addr), TO_CONN(orconn)->port), fmt_addrport(&imuxchan->addr, imuxchan->port));
 
   return chan;
@@ -418,7 +420,7 @@ channel_imux_close_method(channel_t *chan)
   tor_assert(chan);
   channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(chan);
 
-  log_info(LD_CHANNEL, "channel %p: closing IMUX channel", imuxchan);
+  log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: closing IMUX channel", imuxchan);
 
   if(smartlist_len(imuxchan->open_connections) > 0) {
     channel_imux_connection_t *imuxconn = smartlist_get(imuxchan->open_connections, 0);
@@ -1471,14 +1473,14 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
 
   // check if cell CELL_CLOSING_CONN so we can close this connection */
   if(cell->command == CELL_CLOSING_CONN) {
-    log_info(LD_CHANNEL, "channel %p: received conn close cell on connection %p, closing", imuxchan, imuxconn);
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: received conn close cell on connection %p, closing", imuxchan, imuxconn);
     imuxchan->opening_connections = 0;
     connection_or_close_normally(conn, 0);
     return;
   }
 
   if(cell->command == CELL_CLOSING_CHAN) {
-    log_info(LD_CHANNEL, "channel %p: received chan closing cell, closing", imuxchan);
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: received chan closing cell, closing", imuxchan);
     imuxchan->opening_connections = 0;
     channel_mark_for_close(chan);
     return;
@@ -1582,7 +1584,7 @@ int channel_imux_get_chan_max_connections(channel_imux_t *imuxchan)
   }
   channel_max_conns = MAX(channel_max_conns, get_options()->IMUXInitConnections);
 
-  log_info(LD_CHANNEL, "channel %p: we have %d/%d active circuits, with %d connections (%d open) and %d expected connections [%d sockets, maxconn %d] (opening conns %d)", imuxchan,
+  log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: we have %d/%d active circuits, with %d connections (%d open) and %d expected connections [%d sockets, maxconn %d] (opening conns %d)", imuxchan,
       channel_active_circuits, total_active_circuits, channel_n_conns, smartlist_len(imuxchan->open_connections), channel_max_conns,
       total_n_conns, total_max_conns, imuxchan->opening_connections);
 
@@ -1607,7 +1609,7 @@ channel_imux_housekeeping(channel_t *chan, time_t now)
 
   int i;
   if(imuxchan->opening_connections && channel_n_conns < channel_max_conns) {
-    log_info(LD_CHANNEL, "channel %p: creating %d connections", imuxchan,
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: creating %d connections", imuxchan,
             channel_max_conns - channel_n_conns);
 
     for(i = 0; i < (channel_max_conns - channel_n_conns); i++) {
@@ -1619,11 +1621,11 @@ channel_imux_housekeeping(channel_t *chan, time_t now)
         return;
       }
 
-      log_info(LD_CHANNEL, "channel %p: created connection %d with sock %d on channel id " U64_FORMAT ".", imuxchan,
+      log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: created connection %d with sock %d on channel id " U64_FORMAT ".", imuxchan,
           i + channel_n_conns + 1, TO_CONN(imuxconn->conn)->s, U64_PRINTF_ARG(chan->global_identifier));
     }
   } else if(channel_n_conns > channel_max_conns)  {
-    log_info(LD_CHANNEL, "channel %p: closing %d connections", imuxchan,
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: closing %d connections", imuxchan,
             channel_n_conns - channel_max_conns);
 
     /* go through and find connections to close */
@@ -1636,7 +1638,7 @@ channel_imux_housekeeping(channel_t *chan, time_t now)
 
       /* if we found a connection, close it */
       if(imuxconn) {
-        log_info(LD_CHANNEL, "channel %p: closing connection %p with socket %d and state %d", imuxchan, imuxconn, TO_CONN(imuxconn->conn)->s,
+        log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: closing connection %p with socket %d and state %d", imuxchan, imuxconn, TO_CONN(imuxconn->conn)->s,
             TO_CONN(imuxconn->conn)->state);
 
         channel_imux_close_connection(imuxchan, imuxconn);
@@ -1731,7 +1733,7 @@ channel_imux_remove_connection(channel_t *chan, or_connection_t *conn)
 
   /* if we have no more connections, close the channel */
   if(smartlist_len(imuxchan->connections) == 0 && TOR_SIMPLEQ_EMPTY(&chan->outgoing_queue)) {
-    log_info(LD_CHANNEL, "channel %p: no more connections open, closing channel", imuxchan);
+    log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: no more connections open, closing channel", imuxchan);
 
     /* remove this from the incoming channel map if there */
     channel_imux_conn_entry_t lookup, *ent;
