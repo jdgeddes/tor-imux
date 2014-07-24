@@ -39,7 +39,7 @@
 #define LOG_ONEHALF -0.69314718055994529
 #define EWMA_ACTIVE_THRESHOLD 50.0
 
-#define IMUX_LOG_LEVEL LOG_INFO
+#define IMUX_LOG_LEVEL LOG_NOTICE
 
 #define IMUXCIRC_TRAFFIC_TYPE(imuxcirc) (!(imuxcirc->circ) ? (TRAFFIC_TYPE_UNKNOWN) : (imuxcirc->circ->traffic_type))
 
@@ -1579,10 +1579,11 @@ int channel_imux_get_chan_max_connections(channel_imux_t *imuxchan)
   int channel_n_conns = smartlist_len(imuxchan->connections);
   int channel_max_conns = (double)channel_active_circuits / (double)total_active_circuits * total_max_conns;
   channel_max_conns = MIN(channel_max_conns, channel_n_conns * 2);
-  if(total_n_conns > total_max_conns) {
-    channel_max_conns -= (total_n_conns - total_max_conns);
-  }
+  channel_max_conns = MIN(channel_max_conns, channel_n_conns + (total_max_conns - total_n_conns));
   channel_max_conns = MAX(channel_max_conns, get_options()->IMUXInitConnections);
+  if(get_options()->IMUXMaxConnections > 0) {
+     channel_max_conns = MIN(channel_max_conns, get_options()->IMUXMaxConnections);
+  }
 
   log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: we have %d/%d active circuits, with %d connections (%d open) and %d expected connections [%d sockets, maxconn %d] (opening conns %d)", imuxchan,
       channel_active_circuits, total_active_circuits, channel_n_conns, smartlist_len(imuxchan->open_connections), channel_max_conns,
