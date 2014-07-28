@@ -1233,6 +1233,11 @@ channel_tls_remove_connection(channel_t *chan, or_connection_t *conn)
   tor_assert(chan);
   tor_assert(conn);
 
+  if(chan->magic != TLS_CHAN_MAGIC) {
+    log_warn(LD_CHANNEL, "channel %p: magic value incorrect, channel has most likely been freed, skipping", chan);
+    return;
+  }
+
   channel_tls_t *tlschan = BASE_CHAN_TO_TLS(chan);
 
   /* Don't transition if we're already in closing, closed or error */
