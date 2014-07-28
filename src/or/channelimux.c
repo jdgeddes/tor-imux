@@ -1502,7 +1502,7 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
 
   channel_imux_connection_t *imuxconn = channel_imux_find_connection_by_orconn(imuxchan, conn);
   if(!imuxconn) {
-    log_warn(LD_CHANNEL, "channel %p: could not find imuxconn for connection %p", imuxchan, conn);
+    log_info(LD_CHANNEL, "channel %p: could not find imuxconn for connection %p", imuxchan, conn);
   } else {
      imuxconn->last_active = time(NULL);
   }
@@ -1588,7 +1588,7 @@ channel_imux_handle_var_cell(var_cell_t *var_cell, or_connection_t *conn)
 
   channel_imux_connection_t *imuxconn = channel_imux_find_connection_by_orconn(imuxchan, conn);
   if(!imuxconn) {
-    log_warn(LD_CHANNEL, "channel %p: could not find imuxconn for connection %p", imuxchan, conn);
+    log_info(LD_CHANNEL, "channel %p: could not find imuxconn for connection %p", imuxchan, conn);
   } else {
      imuxconn->last_active = time(NULL);
   }
