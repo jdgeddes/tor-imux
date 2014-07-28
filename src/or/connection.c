@@ -3765,7 +3765,14 @@ connection_handle_write_impl(connection_t *conn, int force,
       }
       return 0;
     } else if (conn->state == OR_CONN_STATE_TLS_SERVER_RENEGOTIATING) {
-      return connection_handle_read(conn);
+      int read_retval = connection_handle_read(conn);
+	  /* if we still need to read but are wating for write, adjust */
+	  if(connection_is_writing(conn) && 
+		 conn->state == OR_CONN_STATE_TLS_SERVER_RENEGOTIATING){
+		connection_stop_writing(conn);
+		connection_start_reading(conn);
+	  }
+	  return read_retval;
     }
 
     /* else open, or closing */
