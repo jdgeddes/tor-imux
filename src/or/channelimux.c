@@ -1563,7 +1563,7 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
         cell->sequence, cell->circ_id, imuxcirc->next_sequence);
 
     if(imuxcirc->next_sequence == 1) {
-        log_warn(LD_CHANNEL, "channel %p: next sequence is 1, circuit %u ended up on different channel, resetting to %d.", imuxchan, cell->circ_id, cell->sequence + 1);
+        log_info(LD_CHANNEL, "channel %p: next sequence is 1, circuit %u ended up on different channel, resetting to %d.", imuxchan, cell->circ_id, cell->sequence + 1);
         channel_tls_handle_cell(cell, conn);
         imuxcirc->next_sequence = cell->sequence + 1;
     } else {
