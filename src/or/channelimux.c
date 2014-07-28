@@ -1477,7 +1477,7 @@ channel_imux_flush_conn_to_next_open(channel_imux_t *imuxchan, or_connection_t *
     if(!newconn) {
       log_warn(LD_CHANNEL, "channel %p: could not find open connection to move buf to", imuxchan);
     } else {
-      log_notice(LD_CHANNEL, "channel %p: moving %d bytes from connection %p to %p [%p]", imuxchan,
+      log_info(LD_CHANNEL, "channel %p: moving %d bytes from connection %p to %p [%p]", imuxchan,
           TO_CONN(conn)->outbuf_flushlen, conn, newconn->conn, newconn);
       move_buf_to_buf(TO_CONN(newconn->conn)->outbuf, TO_CONN(conn)->outbuf, &(TO_CONN(conn)->outbuf_flushlen));
     }
@@ -1528,7 +1528,7 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
 
     if(imuxconn) {
       if(!imuxconn->marked_for_close) {
-        log_notice(LD_CHANNEL, "channel %p: conn %p was not marked for close, sending cell to notify other end", imuxchan, imuxconn);
+        log_info(LD_CHANNEL, "channel %p: conn %p was not marked for close, sending cell to notify other end", imuxchan, imuxconn);
         channel_imux_send_command_cell(conn, CELL_CLOSING_CONN);
       }
 
