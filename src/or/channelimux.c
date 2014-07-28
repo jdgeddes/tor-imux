@@ -39,7 +39,7 @@
 #define LOG_ONEHALF -0.69314718055994529
 #define EWMA_ACTIVE_THRESHOLD 50.0
 
-#define IMUX_LOG_LEVEL LOG_NOTICE
+#define IMUX_LOG_LEVEL LOG_INFO
 
 #define IMUXCIRC_TRAFFIC_TYPE(imuxcirc) (!(imuxcirc->circ) ? (TRAFFIC_TYPE_UNKNOWN) : (imuxcirc->circ->traffic_type))
 
@@ -206,7 +206,7 @@ channel_imux_connect(const tor_addr_t *addr, uint16_t port,
   if(!ent) {
       ent = tor_malloc_zero(sizeof(*ent));
       tor_addr_copy(&(ent->addr), addr);
-      ent->chan = imuxchan;
+      ent->chan = chan;
       HT_INSERT(channel_imux_map, &channel_by_addr, ent);
   } else {
       log_info(LD_CHANNEL, "channel %p: already had entry in map for %s", imuxchan, fmt_addr(addr));
@@ -242,6 +242,7 @@ channel_imux_get_connection_to_close(channel_imux_t *imuxchan, int consider_open
     connection_t *conn = TO_CONN(c->conn);
     if((conn->state >= OR_CONN_STATE_MIN_) && 
        (conn->state < OR_CONN_STATE_OR_HANDSHAKING_V3 || consider_open) &&
+       (!c->marked_for_close) &&
        (!get_options()->IMUXSeparateBulkConnection || imuxchan->bulk_connection != c)) 
     {
       if(!imuxconn || imuxconn->create_time >= c->create_time)
@@ -255,20 +256,48 @@ channel_imux_get_connection_to_close(channel_imux_t *imuxchan, int consider_open
 
 
 void
+channel_imux_send_command_cell(or_connection_t *conn, int command)
+{
+  cell_t cell;
+  memset(&cell,0,sizeof(cell_t));
+  cell.command = command;
+  connection_or_write_cell_to_buf(&cell, conn);
+
+  connection_start_writing(TO_CONN(conn));
+}
+
+void
+channel_imux_mark_conn_for_close(channel_imux_t *imuxchan, channel_imux_connection_t *imuxconn)
+{
+  tor_assert(imuxchan);
+  tor_assert(imuxconn);
+
+  SMARTLIST_FOREACH_BEGIN(imuxchan->circuits, channel_imux_circuit_t *, imuxcirc) 
+  {
+    if(imuxcirc->writeconn == imuxconn) {
+      imuxcirc->writeconn = NULL;
+    }
+  }
+  SMARTLIST_FOREACH_END(imuxcirc);
+
+  imuxconn->marked_for_close = 1;
+}
+
+void
 channel_imux_close_connection(channel_imux_t *imuxchan, channel_imux_connection_t *imuxconn)
 {
   tor_assert(imuxchan);
   tor_assert(imuxconn);
 
   /* write CELL_CLOSING_CONN to buffer then mark connection for closing */
-  cell_t cell;
-  memset(&cell,0,sizeof(cell_t));
-  cell.command = CELL_CLOSING_CONN;
-  connection_or_write_cell_to_buf(&cell, imuxconn->conn);
-  imuxchan->opening_connections = 1;
+  if(!imuxconn->marked_for_close) {
+     channel_imux_send_command_cell(imuxconn->conn, CELL_CLOSING_CONN);
+  }
 
-  imuxconn->marked_for_close = 1;
-  connection_or_close_normally(imuxconn->conn, 1);
+  imuxchan->opening_connections = 1;
+  channel_imux_mark_conn_for_close(imuxchan, imuxconn);
+  smartlist_remove(imuxchan->open_connections, imuxconn);
+  /*connection_or_close_normally(imuxconn->conn, 1);*/
 }
 
 
@@ -1166,7 +1195,7 @@ channel_imux_write_cell_method(channel_t *chan, cell_t *cell, circuit_t *circ)
   }
   
   or_connection_t *conn = imuxconn->conn;
-  log_debug(LD_CHANNEL, "channel %p: write cell %d (%d) for circuit %u on conn %p", imuxchan, cell->sequence, cell->command, cell->circ_id, conn);
+  log_info(LD_CHANNEL, "channel %p: write cell %d (%d) for circuit %u on conn %p", imuxchan, cell->sequence, cell->command, cell->circ_id, conn);
 
   connection_or_write_cell_to_buf(cell, conn);
   channel_imux_update_connection_ewma(imuxchan, imuxconn);
@@ -1244,7 +1273,7 @@ channel_imux_write_packed_cell_method(channel_t *chan, or_connection_t *conn,
     }
 
     conn = imuxconn->conn;
-    log_debug(LD_CHANNEL, "channel %p: write packed cell %d with command %d for circuit %u (ewma %f) on conn %p (%p)", imuxchan,
+    log_info(LD_CHANNEL, "channel %p: write packed cell %d with command %d for circuit %u (ewma %f) on conn %p (%p)", imuxchan,
         cell.sequence, cell.command, cell.circ_id, ewma_val, conn, imuxconn);
   } else {
     /* if we are using a separate bulk connection, attempt to use that for bulk traffic circuits */
@@ -1255,7 +1284,7 @@ channel_imux_write_packed_cell_method(channel_t *chan, or_connection_t *conn,
       conn = imuxconn->conn;
     }
 
-    log_debug(LD_CHANNEL, "channel %p: write packed cell %d with command %d for circuit %u (ewma %f) on conn %p (%p) (KIST)", imuxchan,
+    log_info(LD_CHANNEL, "channel %p: write packed cell %d with command %d for circuit %u (ewma %f) on conn %p (%p) (KIST)", imuxchan,
         cell.sequence, cell.command, cell.circ_id, imuxcirc->ewma.ewma_val, conn, imuxconn);
   }
 
@@ -1297,7 +1326,7 @@ channel_imux_write_var_cell_method(channel_t *chan, var_cell_t *var_cell, circui
   }
 
   or_connection_t *conn = imuxconn->conn;
-  log_debug(LD_CHANNEL, "channel %p: write var cell for circuit %u on conn %p", imuxchan, var_cell->circ_id, conn);
+  log_info(LD_CHANNEL, "channel %p: write var cell for circuit %u on conn %p", imuxchan, var_cell->circ_id, conn);
 
   connection_or_write_var_cell_to_buf(var_cell, conn);
   channel_imux_update_connection_ewma(imuxchan, imuxconn);
@@ -1332,19 +1361,6 @@ channel_imux_find_imux_connection(channel_t *chan, or_connection_t *conn)
 }
 
 void
-channel_imux_send_command_cell(channel_imux_t *imuxchan, channel_imux_connection_t *imuxconn, int command)
-{
-  tor_assert(imuxchan);
-  tor_assert(imuxconn);
-  tor_assert(TO_CONN(imuxconn->conn)->state == OR_CONN_STATE_OPEN);
-
-  cell_t cell;
-  memset(&cell,0,sizeof(cell_t));
-  cell.command = command;
-  connection_or_write_cell_to_buf(&cell, imuxconn->conn);
-}
-
-void
 channel_imux_handle_state_change_on_orconn(channel_t *chan, or_connection_t *conn,
                                       uint8_t old_state, uint8_t state)
 {
@@ -1375,11 +1391,11 @@ channel_imux_handle_state_change_on_orconn(channel_t *chan, or_connection_t *con
     /* if we don't have a bulk conneciton but at least one open connection, set bulk */
     if(get_options()->IMUXSeparateBulkConnection && !imuxchan->bulk_connection) {
       imuxchan->bulk_connection = imuxconn;
-      channel_imux_send_command_cell(imuxchan, imuxconn, CELL_BULK_CONN);
+      channel_imux_send_command_cell(imuxconn->conn, CELL_BULK_CONN);
       log_info(LD_CHANNEL, "channel %p assigning connection %p as bulk connection", imuxchan, imuxconn);
     } else if(get_options()->IMUXSeparateWebConnection && !imuxchan->web_connection) {
       imuxchan->web_connection = imuxconn;
-      channel_imux_send_command_cell(imuxchan, imuxconn, CELL_WEB_CONN);
+      channel_imux_send_command_cell(imuxconn->conn, CELL_WEB_CONN);
       log_info(LD_CHANNEL, "channel %p assigning connection %p as web connection", imuxchan, imuxconn);
     }
 
@@ -1451,6 +1467,25 @@ channel_imux_flush_circ_queue(channel_imux_circuit_t *circ, or_connection_t *con
 }
 
 void
+channel_imux_flush_conn_to_next_open(channel_imux_t *imuxchan, or_connection_t *conn)
+{
+  tor_assert(imuxchan);
+  tor_assert(conn);
+
+  if(connection_get_outbuf_len(TO_CONN(conn)) > 0) {
+    channel_imux_connection_t *newconn = channel_imux_get_next_open_connection(imuxchan);
+    if(!newconn) {
+      log_warn(LD_CHANNEL, "channel %p: could not find open connection to move buf to", imuxchan);
+    } else {
+      log_notice(LD_CHANNEL, "channel %p: moving %d bytes from connection %p to %p [%p]", imuxchan,
+          TO_CONN(conn)->outbuf_flushlen, conn, newconn->conn, newconn);
+      move_buf_to_buf(TO_CONN(newconn->conn)->outbuf, TO_CONN(conn)->outbuf, &(TO_CONN(conn)->outbuf_flushlen));
+    }
+  }
+}
+
+
+void
 channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
 {
   channel_t *chan = conn->chan;
@@ -1462,7 +1497,7 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
     imuxcirc = channel_imux_find_circuit(imuxchan, cell->circ_id);
   }
 
-  log_debug(LD_CHANNEL, "channel %p: received cell %d (%d) on circuit %u on conn %p", imuxchan,
+  log_info(LD_CHANNEL, "channel %p: received cell %d (%d) on circuit %u on conn %p", imuxchan,
           cell->sequence, cell->command, cell->circ_id, conn);
 
   channel_imux_connection_t *imuxconn = channel_imux_find_connection_by_orconn(imuxchan, conn);
@@ -1490,7 +1525,17 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
   if(cell->command == CELL_CLOSING_CONN) {
     log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: received conn close cell on connection %p, closing", imuxchan, imuxconn);
     imuxchan->opening_connections = 0;
-    connection_or_close_normally(conn, 0);
+
+    if(imuxconn) {
+      if(!imuxconn->marked_for_close) {
+        log_notice(LD_CHANNEL, "channel %p: conn %p was not marked for close, sending cell to notify other end", imuxchan, imuxconn);
+        channel_imux_send_command_cell(conn, CELL_CLOSING_CONN);
+      }
+
+      /*channel_imux_flush_conn_to_next_open(imuxchan, conn);*/
+      channel_imux_mark_conn_for_close(imuxchan, imuxconn);
+      connection_or_close_normally(conn, 1);
+    }
     return;
   }
 
@@ -1517,21 +1562,27 @@ channel_imux_handle_cell(cell_t *cell, or_connection_t *conn)
     log_info(LD_CHANNEL, "channel %p: received out of order cell %d on circuit %u, was expecting %d", imuxchan,
         cell->sequence, cell->circ_id, imuxcirc->next_sequence);
 
-    channel_imux_cell_t *chan_cell = tor_malloc_zero(sizeof(*chan_cell));
-    chan_cell->cell.circ_id = cell->circ_id;
-    chan_cell->cell.sequence = cell->sequence;
-    chan_cell->cell.command = cell->command;
-    memcpy(chan_cell->cell.payload, cell->payload, CELL_PAYLOAD_SIZE);
+    if(imuxcirc->next_sequence == 1) {
+        log_warn(LD_CHANNEL, "channel %p: next sequence is 1, circuit %u ended up on different channel, resetting to %d.", imuxchan, cell->circ_id, cell->sequence + 1);
+        channel_tls_handle_cell(cell, conn);
+        imuxcirc->next_sequence = cell->sequence + 1;
+    } else {
+        channel_imux_cell_t *chan_cell = tor_malloc_zero(sizeof(*chan_cell));
+        chan_cell->cell.circ_id = cell->circ_id;
+        chan_cell->cell.sequence = cell->sequence;
+        chan_cell->cell.command = cell->command;
+        memcpy(chan_cell->cell.payload, cell->payload, CELL_PAYLOAD_SIZE);
 
-    smartlist_pqueue_add(imuxcirc->cell_queue, channel_imux_compare_cells,
-        STRUCT_OFFSET(channel_imux_cell_t, minheap_idx), chan_cell);
+        smartlist_pqueue_add(imuxcirc->cell_queue, channel_imux_compare_cells,
+                STRUCT_OFFSET(channel_imux_cell_t, minheap_idx), chan_cell);
+    }
   }
 }
 
 void
 channel_imux_handle_var_cell(var_cell_t *var_cell, or_connection_t *conn)
 {
-  log_debug(LD_CHANNEL, "received var_cell on circuit %u on conn %p", var_cell->circ_id, conn);
+  log_info(LD_CHANNEL, "received var_cell on circuit %u on conn %p", var_cell->circ_id, conn);
 
   channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(conn->chan);
 
@@ -1599,6 +1650,10 @@ int channel_imux_get_chan_max_connections(channel_imux_t *imuxchan)
   if(get_options()->IMUXMaxConnections > 0) {
      channel_max_conns = MIN(channel_max_conns, get_options()->IMUXMaxConnections);
   }
+
+  /*if(channel_n_conns >= channel_max_conns) {*/
+      /*channel_max_conns = 1;*/
+  /*}*/
 
   log_fn(IMUX_LOG_LEVEL, LD_CHANNEL, "channel %p: we have %d/%d active circuits, with %d connections (%d open) and %d expected connections [%d sockets, maxconn %d] (opening conns %d)", imuxchan,
       channel_active_circuits, total_active_circuits, channel_n_conns, smartlist_len(imuxchan->open_connections), channel_max_conns,
@@ -1691,6 +1746,19 @@ channel_imux_get_num_connections(channel_t *chan)
   return smartlist_len(imuxchan->connections);
 }
 
+void 
+channel_imux_notify_conn_error(channel_t *chan, or_connection_t *conn)
+{
+  tor_assert(chan);
+  tor_assert(conn);
+
+  channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(chan);
+
+  log_warn(LD_CHANNEL, "channel %p: connection %p is closing because of error", imuxchan, conn);
+
+  channel_imux_flush_conn_to_next_open(imuxchan, conn);
+}
+
 void
 channel_imux_add_connection(channel_t *chan, or_connection_t *conn)
 {
@@ -1710,7 +1778,7 @@ channel_imux_remove_connection(channel_t *chan, or_connection_t *conn)
   channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(chan);
 
   channel_imux_connection_t *imuxconn = channel_imux_find_connection_by_orconn(imuxchan, conn);
-
+  
   if(!imuxconn) {
     log_info(LD_CHANNEL, "could not find imuxconn to remove conneciton %p from channel %p", conn, chan);
     return;
@@ -1719,12 +1787,12 @@ channel_imux_remove_connection(channel_t *chan, or_connection_t *conn)
   /* if we are closing the bulk connection, pick another one and send the CELL_BULK_CONN cell */
   if(imuxconn == imuxchan->bulk_connection) {
     imuxchan->bulk_connection = channel_imux_get_next_open_connection(imuxchan);
-    channel_imux_send_command_cell(imuxchan, imuxchan->bulk_connection, CELL_BULK_CONN);
+    channel_imux_send_command_cell(imuxchan->bulk_connection->conn, CELL_BULK_CONN);
     
     log_info(LD_CHANNEL, "channel %p: new bulk connection %p", imuxchan, imuxchan->bulk_connection);
   } else  if(imuxconn == imuxchan->web_connection) {
     imuxchan->web_connection = channel_imux_get_next_open_connection(imuxchan);
-    channel_imux_send_command_cell(imuxchan, imuxchan->web_connection, CELL_WEB_CONN);
+    channel_imux_send_command_cell(imuxchan->web_connection->conn, CELL_WEB_CONN);
     
     log_info(LD_CHANNEL, "channel %p: new web connection %p", imuxchan, imuxchan->web_connection);
   }

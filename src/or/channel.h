@@ -395,6 +395,8 @@ void channel_flush_cells(channel_t *chan);
 /* Notify flushed outgoing for dirreq handling */
 void channel_notify_flushed(channel_t *chan);
 
+void channel_notify_conn_error(channel_t *chan, or_connection_t *conn);
+
 /* Handle stuff we need to do on open like notifying circuits */
 void channel_do_open_actions(channel_t *chan);
 

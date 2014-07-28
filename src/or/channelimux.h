@@ -146,6 +146,7 @@ int channel_imux_write_packed_cell_method(channel_t *chan, or_connection_t *conn
 int channel_imux_write_var_cell_method(channel_t *chan,
                                              var_cell_t *var_cell, circuit_t *circ);
 
+void  channel_imux_notify_conn_error(channel_t *chan, or_connection_t *conn);
 
 #endif
 

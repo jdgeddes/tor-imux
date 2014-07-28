@@ -3782,8 +3782,11 @@ connection_handle_write_impl(connection_t *conn, int force,
     switch (result) {
       CASE_TOR_TLS_ERROR_ANY:
       case TOR_TLS_CLOSE:
-        log_info(LD_NET, result != TOR_TLS_CLOSE ?
+        log_notice(LD_NET, result != TOR_TLS_CLOSE ?
                  "tls error. breaking.":"TLS connection closed on flush");
+
+        channel_notify_conn_error(or_conn->chan, or_conn);
+
         /* Don't flush; connection is dead. */
         connection_or_notify_error(or_conn,
                                    END_OR_CONN_REASON_MISC,
@@ -4649,6 +4652,7 @@ assert_connection_ok(connection_t *conn, time_t now)
     tor_assert((conn->type == CONN_TYPE_EXIT &&
                 conn->state == EXIT_CONN_STATE_RESOLVING) ||
                get_options()->GlobalSchedulerUSec ||
+               (get_options()->ChannelType == CHANNEL_TYPE_IMUX) ||
                connection_is_writing(conn) ||
                conn->write_blocked_on_bw ||
                (CONN_IS_EDGE(conn) &&

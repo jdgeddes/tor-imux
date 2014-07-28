@@ -2612,6 +2612,30 @@ channel_notify_flushed(channel_t *chan)
                               DIRREQ_CHANNEL_BUFFER_FLUSHED);
 }
 
+
+void 
+channel_notify_conn_error(channel_t *chan, or_connection_t *conn)
+{
+  tor_assert(chan);
+
+  switch(chan->type) {
+      case CHANNEL_TYPE_TLS:
+      case CHANNEL_TYPE_PCTCP:
+          break;
+
+      case CHANNEL_TYPE_DUAL:
+          break;
+
+      case CHANNEL_TYPE_IMUX:
+          channel_imux_notify_conn_error(chan, conn);
+          break;
+
+      default:
+          break;
+  }
+
+}
+
 /**
  * Process the queue of incoming channels on a listener
  *
