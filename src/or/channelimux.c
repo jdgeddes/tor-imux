@@ -180,7 +180,7 @@ channel_imux_connect(const tor_addr_t *addr, uint16_t port,
 
   /* figure out how many connections to initally create */
   int n_conns = get_n_open_sockets();
-  int total_max_conns = get_options()->ConnLimit * get_options()->IMUXConnLimitThreshold;
+  int total_max_conns = get_options()->ConnLimit_ * get_options()->IMUXConnLimitThreshold;
   int num_connections_to_create = get_options()->IMUXInitConnections;
   if(n_conns >= total_max_conns)
     num_connections_to_create = 1;
@@ -366,7 +366,7 @@ channel_imux_handle_incoming(or_connection_t *orconn)
   orconn->chan = chan;
 
   /*int n_conns = get_n_open_sockets();*/
-  /*int total_max_conns = (get_options()->ConnLimit - 32) * get_options()->IMUXConnLimitThreshold;*/
+  /*int total_max_conns = (get_options()->ConnLimit_ - 32) * get_options()->IMUXConnLimitThreshold;*/
 
   int channel_n_conns = smartlist_len(imuxchan->connections) + 1;
   int channel_max_conns = channel_imux_get_chan_max_connections(imuxchan);
@@ -1602,7 +1602,7 @@ channel_imux_handle_var_cell(var_cell_t *var_cell, or_connection_t *conn)
  * connections based on how much data is being buffered in the
  * connections.  also need to take into account how many total
  * connections are open across all channels to make sure we don't
- * run into the ConnLimit_, disabling us from opening any more connections
+ * run into the ConnLimit__, disabling us from opening any more connections
  */
 
 int channel_imux_get_chan_max_connections(channel_imux_t *imuxchan)
@@ -1640,7 +1640,7 @@ int channel_imux_get_chan_max_connections(channel_imux_t *imuxchan)
   SMARTLIST_FOREACH_END(imuxcirc);
 
   int total_n_conns = get_n_open_sockets();
-  int total_max_conns = (get_options()->ConnLimit - 32) * get_options()->IMUXConnLimitThreshold;
+  int total_max_conns = (get_options()->ConnLimit_ - 32) * get_options()->IMUXConnLimitThreshold;
 
   int channel_n_conns = smartlist_len(imuxchan->connections);
   int channel_max_conns = (double)channel_active_circuits / (double)total_active_circuits * total_max_conns;
