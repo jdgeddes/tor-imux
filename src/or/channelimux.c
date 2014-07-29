@@ -851,7 +851,10 @@ channel_imux_connection_t *
 channel_imux_get_ewma_connection(channel_imux_t *imuxchan, channel_imux_circuit_t *imuxcirc)
 {
   tor_assert(imuxchan);
-  tor_assert(imuxcirc);
+
+  if(!imuxcirc) {
+      return channel_imux_get_next_open_connection(imuxchan);
+  }
 
   int circuit_rank = 0;
   int num_active_circuits = 0;
@@ -1023,9 +1026,13 @@ channel_imux_get_write_connection(channel_imux_t *imuxchan, channel_imux_circuit
   switch(imuxchan->schedule_type)
   {
     case CHANNEL_IMUX_SCHEDULE_RR_CIRC:
-      if(!imuxcirc->writeconn)
-        imuxcirc->writeconn = channel_imux_get_next_open_connection(imuxchan);
-      conn = imuxcirc->writeconn;
+      if(imuxcirc) {
+          if(!imuxcirc->writeconn)
+            imuxcirc->writeconn = channel_imux_get_next_open_connection(imuxchan);
+          conn = imuxcirc->writeconn;
+      } else {
+          conn = channel_imux_get_next_open_connection(imuxchan);
+      }
       break;
 
     case CHANNEL_IMUX_SCHEDULE_RR_CELL:
@@ -1202,7 +1209,8 @@ channel_imux_write_cell_method(channel_t *chan, cell_t *cell, circuit_t *circ)
   imuxconn->last_write = time(NULL);
   imuxconn->last_active = time(NULL);
 
-  imuxcirc->cells_written += 1;
+  if(imuxcirc) 
+     imuxcirc->cells_written += 1;
 
   return 1;
 }
@@ -1248,6 +1256,7 @@ channel_imux_write_packed_cell_method(channel_t *chan, or_connection_t *conn,
 
   channel_imux_connection_t *imuxconn = channel_imux_find_connection_by_orconn(imuxchan, conn);
   channel_imux_circuit_t *imuxcirc = channel_imux_find_circuit(imuxchan, cell.circ_id);
+  double ewma_val = 0;
 
   if(!imuxcirc)
     imuxcirc = channel_imux_add_circuit(chan, circ, cell.circ_id);
@@ -1255,10 +1264,11 @@ channel_imux_write_packed_cell_method(channel_t *chan, or_connection_t *conn,
   channel_imux_update_circuit_ewma(imuxchan, imuxcirc);
 
   if(imuxchan->schedule_type != CHANNEL_IMUX_SCHEDULE_KIST || !imuxconn || imuxconn->marked_for_close || TO_CONN(imuxconn->conn)->state != OR_CONN_STATE_OPEN) {
-    double ewma_val = 0;
     imuxconn = channel_imux_get_write_connection(imuxchan, imuxcirc, cell.command);
-    imuxcirc->cells_written += 1;
-    ewma_val = imuxcirc->ewma.ewma_val;
+    if(imuxcirc) {
+      imuxcirc->cells_written += 1;
+      ewma_val = imuxcirc->ewma.ewma_val;
+    }
 
     if(!imuxconn && imuxchan->bulk_connection)  {
       imuxconn = imuxchan->bulk_connection;
@@ -1284,8 +1294,13 @@ channel_imux_write_packed_cell_method(channel_t *chan, or_connection_t *conn,
       conn = imuxconn->conn;
     }
 
+    if(imuxcirc) {
+      imuxcirc->cells_written += 1;
+      ewma_val = imuxcirc->ewma.ewma_val;
+    }
+
     log_info(LD_CHANNEL, "channel %p: write packed cell %d with command %d for circuit %u (ewma %f) on conn %p (%p) (KIST)", imuxchan,
-        cell.sequence, cell.command, cell.circ_id, imuxcirc->ewma.ewma_val, conn, imuxconn);
+        cell.sequence, cell.command, cell.circ_id, ewma_val, conn, imuxconn);
   }
 
   size_t cell_network_size = get_cell_network_size(chan->wide_circ_ids);
@@ -1333,7 +1348,8 @@ channel_imux_write_var_cell_method(channel_t *chan, var_cell_t *var_cell, circui
   imuxconn->last_write = time(NULL);
   imuxconn->last_active = time(NULL);
 
-  imuxcirc->cells_written += 1;
+  if(imuxcirc)
+     imuxcirc->cells_written += 1;
 
   return 1;
 }
@@ -1845,28 +1861,28 @@ channel_imux_remove_connection(channel_t *chan, or_connection_t *conn)
 channel_imux_circuit_t *
 channel_imux_add_circuit(channel_t *chan, circuit_t *circ, circid_t circ_id)
 {
-	tor_assert(chan);
+  tor_assert(chan);
 
-	channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(chan);
+  channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(chan);
   channel_imux_circuit_t *imuxcirc = channel_imux_find_circuit(imuxchan, circ_id);
 
-	if(imuxcirc) {
-		log_info(LD_CHANNEL, "circuit %u already assigned to channel, changing circ from %p to %p", circ_id, imuxcirc->circ, circ);
+  if(imuxcirc) {
+    log_info(LD_CHANNEL, "circuit %u already assigned to channel, changing circ from %p to %p", circ_id, imuxcirc->circ, circ);
     imuxcirc->circ = circ;
-		return imuxcirc;
-	}
+    return imuxcirc;
+  }
 
-	log_info(LD_CHANNEL, "adding circuit %u to channel %p", circ_id, imuxchan);
+  log_info(LD_CHANNEL, "adding circuit %u to channel %p", circ_id, imuxchan);
 
-	imuxcirc = tor_malloc_zero(sizeof(*imuxcirc));
-	imuxcirc->circ_id = circ_id;
+  imuxcirc = tor_malloc_zero(sizeof(*imuxcirc));
+  imuxcirc->circ_id = circ_id;
   imuxcirc->circ = circ;
-	imuxcirc->next_sequence = 1;
-	imuxcirc->writeconn = NULL;
-	imuxcirc->cell_queue = smartlist_new();
-	imuxcirc->ewma.ewma_val = 0.0;
-	imuxcirc->active = 0;
-	smartlist_add(imuxchan->circuits, imuxcirc);
+  imuxcirc->next_sequence = 1;
+  imuxcirc->writeconn = NULL;
+  imuxcirc->cell_queue = smartlist_new();
+  imuxcirc->ewma.ewma_val = 0.0;
+  imuxcirc->active = 0;
+  smartlist_add(imuxchan->circuits, imuxcirc);
 
   return imuxcirc;
 }
