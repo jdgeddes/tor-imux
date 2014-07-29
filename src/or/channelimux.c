@@ -96,6 +96,7 @@ channel_imux_common_init(channel_imux_t *imuxchan)
   chan->magic = IMUX_CHAN_MAGIC;
   chan->state = CHANNEL_STATE_OPENING;
   chan->close = channel_imux_close_method;
+  chan->free = channel_imux_free_method;
   chan->describe_transport = channel_imux_describe_transport_method;
   chan->get_remote_addr = channel_imux_get_remote_addr_method;
   chan->get_remote_descr = channel_imux_get_remote_descr_method;
@@ -471,6 +472,20 @@ channel_imux_close_method(channel_t *chan)
   ent = HT_REMOVE(channel_imux_map, &channel_by_addr, &lookup);
   if(ent)
     tor_free(ent);
+}
+
+void
+channel_imux_free_method(channel_t *chan)
+{
+  channel_imux_t *imuxchan = BASE_CHAN_TO_IMUX(chan);
+
+  tor_assert(imuxchan);
+
+  SMARTLIST_FOREACH_BEGIN(imuxchan->connections, channel_imux_connection_t *, imuxconn)
+  {
+    imuxconn->conn->chan = NULL;
+  }
+  SMARTLIST_FOREACH_END(imuxconn);
 }
 
 /**

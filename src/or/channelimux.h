@@ -129,6 +129,7 @@ void channel_imux_free_all(void);
 /* channel_imux_t method declarations */
 
 void channel_imux_close_method(channel_t *chan);
+void channel_imux_free_method(channel_t *chan);
 const char * channel_imux_describe_transport_method(channel_t *chan);
 int channel_imux_get_remote_addr_method(channel_t *chan, tor_addr_t *addr_out);
 const char *channel_imux_get_remote_descr_method(channel_t *chan, int flags);
